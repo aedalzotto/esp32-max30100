@@ -11,16 +11,15 @@ Universidade de Passo Fundo (http://www.upf.br/)
  * - no need to add external pull-up resistors, driver will enable internal pull-up resistors.
  */
 
-
 #include <stdio.h>
 #include "driver/i2c.h"
 #include "freertos/task.h"
 
-#include "max30100.h"
+#include "max30100/max30100.h"
 
 #define I2C_SDA 18
 #define I2C_SCL 19
-#define I2C_FRQ 100000;
+#define I2C_FRQ 100000
 #define I2C_PORT I2C_NUM_0
 
 max30100_config_t max30100;
@@ -62,6 +61,9 @@ void app_main()
                    MAX30100_DEFAULT_SAMPLING_RATE,
                    MAX30100_DEFAULT_LED_PULSE_WIDTH,
                    MAX30100_DEFAULT_IR_LED_CURRENT,
+                   MAX30100_DEFAULT_START_RED_LED_CURRENT,
+                   MAX30100_DEFAULT_MEAN_FILTER_SIZE,
+                   MAX30100_DEFAULT_PULSE_BPM_SAMPLE_SIZE,
                    true, false ));
 
     //Start test task

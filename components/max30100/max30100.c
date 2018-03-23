@@ -31,9 +31,11 @@ GEPID - Grupo de Pesquisa em Cultura Digital (http://gepid.upf.br/)
 Universidade de Passo Fundo (http://www.upf.br/)
 */
 
-#include "max30100.h"
 #include <stdio.h>
-#include "esp_err.h"
+#include "max30100/max30100.h"
+#include "max30100/registers.h"
+
+/* Definitions */
 
 esp_err_t max30100_init( max30100_config_t* this,
                          i2c_port_t i2c_num,
@@ -41,26 +43,43 @@ esp_err_t max30100_init( max30100_config_t* this,
                          max30100_sampling_rate_t sampling_rate,
                          max30100_pulse_width_t pulse_width,
                          max30100_current_t ir_current,
+                         max30100_current_t start_red_current,
+                         uint8_t mean_filter_size,
+                         uint8_t pulse_bpm_sample_size,
                          bool high_res_mode,
                          bool debug )
 {
     this->i2c_num = i2c_num;
+    
+    this->acceptable_intense_diff = MAX30100_DEFAULT_ACCEPTABLE_INTENSITY_DIFF;
+    this->red_current_adj_ms = MAX30100_DEFAULT_RED_LED_CURRENT_ADJUSTMENT_MS;
+    this->reset_spo2_pulse_n = MAX30100_DEFAULT_RESET_SPO2_EVERY_N_PULSES;
+    this->dc_alpha = MAX30100_DEFAULT_ALPHA;
+    this->pulse_min_threshold = MAX30100_DEFAULT_PULSE_MIN_THRESHOLD;
+    this->pulse_max_threshold = MAX30100_DEFAULT_PULSE_MAX_THRESHOLD;
+    
+    this->mean_filter_size = mean_filter_size;
+    this->pulse_bpm_sample_size = pulse_bpm_sample_size;
 
     this->debug = debug;
     this->current_pulse_detector_state = MAX30100_PULSE_IDLE;
 
+    this->mean_diff_ir.values = NULL;
+    this->values_bpm = NULL;
+    this->mean_diff_ir.values = malloc(sizeof(float)*mean_filter_size);
+    this->values_bpm = malloc(sizeof(float)*mean_filter_size);
+
+    if(!(this->values_bpm) || !(this->mean_diff_ir.values)) return ESP_ERR_INVALID_RESPONSE;
+
     esp_err_t ret = max30100_set_mode(this, mode);
     if(ret != ESP_OK) return ret;
 
-    //Check table 8 in datasheet on page 19.
-    //You can't just throw in sample rate and pulse width randomly.
-    //100hz + 1600us is max for that resolution.
     ret = max30100_set_sampling_rate(this, sampling_rate);
     if(ret != ESP_OK) return ret;
     ret = max30100_set_pulse_width(this, pulse_width);
     if(ret != ESP_OK) return ret;
 
-    this->red_current = (uint8_t)MAX30100_STARTING_RED_LED_CURRENT;
+    this->red_current = (uint8_t)start_red_current;
     this->last_red_current_check = 0;
 
     this->ir_current = ir_current;
@@ -121,10 +140,10 @@ esp_err_t max30100_update(max30100_config_t* this, max30100_data_t* data) {
 
     this->dc_filter_ir = max30100_dc_removal( (float)raw_data.raw_ir,
                                               this->dc_filter_ir.w,
-                                              MAX30100_ALPHA );
+                                              this->dc_alpha );
     this->dc_filter_red = max30100_dc_removal( (float)raw_data.raw_red,
                                                this->dc_filter_red.w,
-                                               MAX30100_ALPHA );
+                                               this->dc_alpha );
 
     float mean_diff_res_ir = max30100_mean_diff( this,
                                                  this->dc_filter_ir.result );
@@ -154,7 +173,7 @@ esp_err_t max30100_update(max30100_config_t* this, max30100_data_t* data) {
         this->current_spO2 = 110.0 - 18.0 * ratio_rms;
         data->spO2 = this->current_spO2;
 
-        if(!(this->pulses_detected % MAX30100_RESET_SPO2_EVERY_N_PULSES)) {
+        if(!(this->pulses_detected % this->reset_spo2_pulse_n)) {
             this->ir_ac_sq_sum = 0;
             this->red_ac_sq_sum = 0;
             this->samples_recorded = 0;
@@ -184,7 +203,7 @@ bool max30100_detect_pulse(max30100_config_t* this, float sensor_value) {
     static uint32_t current_beat = 0;
     static uint32_t last_beat = 0;
 
-    if(sensor_value > MAX30100_PULSE_MAX_THRESHOLD) {
+    if(sensor_value > this->pulse_max_threshold) {
         this->current_pulse_detector_state = MAX30100_PULSE_IDLE;
         prev_sensor_value = 0;
         last_beat = 0;
@@ -196,7 +215,7 @@ bool max30100_detect_pulse(max30100_config_t* this, float sensor_value) {
 
     switch(this->current_pulse_detector_state) {
     case MAX30100_PULSE_IDLE:
-        if(sensor_value >= MAX30100_PULSE_MIN_THRESHOLD) {
+        if(sensor_value >= this->pulse_min_threshold) {
             this->current_pulse_detector_state = MAX30100_PULSE_TRACE_UP;
             values_went_down = 0;
         }
@@ -232,22 +251,22 @@ bool max30100_detect_pulse(max30100_config_t* this, float sensor_value) {
 
             this->values_bpm[this->bpm_index] = raw_bpm;
             this->values_bpm_sum = 0;
-            for(int i = 0; i < MAX30100_PULSE_BPM_SAMPLE_SIZE; i++)
+            for(int i = 0; i < this->pulse_bpm_sample_size; i++)
                 this->values_bpm_sum += this->values_bpm[i];
 
             if(this->debug) {
                 printf("CurrentMoving Avg: ");
 
-                for(int i = 0; i < MAX30100_PULSE_BPM_SAMPLE_SIZE; i++)
+                for(int i = 0; i < this->pulse_bpm_sample_size; i++)
                     printf("%f ", this->values_bpm[i]);
 
                 printf(" \n");
             }
 
             this->bpm_index++;
-            this->bpm_index = this->bpm_index % MAX30100_PULSE_BPM_SAMPLE_SIZE;
+            this->bpm_index = this->bpm_index % this->pulse_bpm_sample_size;
 
-            if(this->values_bpm_count < MAX30100_PULSE_BPM_SAMPLE_SIZE)
+            if(this->values_bpm_count < this->pulse_bpm_sample_size)
                 this->values_bpm_count++;
 
             this->current_bpm = this->values_bpm_sum / this->values_bpm_count;
@@ -264,7 +283,7 @@ bool max30100_detect_pulse(max30100_config_t* this, float sensor_value) {
         if(sensor_value < prev_sensor_value)
             values_went_down++;
 
-        if(sensor_value < MAX30100_PULSE_MIN_THRESHOLD)
+        if(sensor_value < this->pulse_min_threshold)
             this->current_pulse_detector_state = MAX30100_PULSE_IDLE;
 
         break;
@@ -279,10 +298,10 @@ esp_err_t max30100_balance_intensities( max30100_config_t* this,
                                         float ir_dc )
 {
     if( (uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS) -
-        this->last_red_current_check >= MAX30100_RED_LED_CURRENT_ADJUSTMENT_MS )
+        this->last_red_current_check >= this->red_current_adj_ms )
     {
         //printf("%f\n", red_dc - ir_dc);
-        if( ir_dc - red_dc > MAX30100_MAGIC_ACCEPTABLE_INTENSITY_DIFF &&
+        if( ir_dc - red_dc > this->acceptable_intense_diff &&
             this->red_current < MAX30100_LED_CURRENT_50MA )
         {
             this->red_current++;
@@ -293,7 +312,7 @@ esp_err_t max30100_balance_intensities( max30100_config_t* this,
             if(this->debug)
                 printf("RED LED Current +\n");
 
-        } else if( red_dc - ir_dc > MAX30100_MAGIC_ACCEPTABLE_INTENSITY_DIFF &&
+        } else if( red_dc - ir_dc > this->acceptable_intense_diff &&
                    this->red_current > 0 )
         {
             this->red_current--;
@@ -450,7 +469,7 @@ esp_err_t max30100_set_pulse_width( max30100_config_t* this,
 
 esp_err_t max30100_set_led_current( max30100_config_t* this,
                                     uint8_t red_current,
-                                    uint8_t ir_current)
+                                    uint8_t ir_current )
 {
     //Tratar erros
     return max30100_write_register( this,
@@ -458,9 +477,44 @@ esp_err_t max30100_set_led_current( max30100_config_t* this,
                                     (red_current << 4) | ir_current );
 }
 
-esp_err_t max330100_read_temperature( max30100_config_t* this,
-                                      float* temperature )
+esp_err_t max30100_set_acceptable_intense_difff( max30100_config_t* this, 
+                                                 uint32_t acceptable_intense_diff )
 {
+    //Add possible error check
+    this->acceptable_intense_diff = acceptable_intense_diff;
+    return ESP_OK;
+}
+esp_err_t max30100_set_red_current_adj_ms(max30100_config_t* this, uint32_t red_current_adj_ms) {
+    //Add possible error check
+    this->red_current_adj_ms = red_current_adj_ms;
+    return ESP_OK;
+}
+
+esp_err_t max30100_set_reset_spo2_pulse_n(max30100_config_t* this, uint8_t reset_spo2_pulse_n) {
+    //Add possible error check
+    this->reset_spo2_pulse_n = reset_spo2_pulse_n;
+    return ESP_OK;
+}
+
+esp_err_t max30100_set_dc_alpha(max30100_config_t* this, float dc_alpha) {
+    //Add possible error check
+    this->dc_alpha = dc_alpha;
+    return ESP_OK;
+}
+
+esp_err_t max30100_set_pulse_min_threshold(max30100_config_t* this, uint16_t pulse_min_threshold) {
+    //Add possible error check
+    this->pulse_min_threshold = pulse_min_threshold;
+    return ESP_OK;
+}
+
+esp_err_t max30100_set_pulse_max_threshold(max30100_config_t* this, uint16_t pulse_max_threshold) {
+    //Add possible error check
+    this->pulse_max_threshold = pulse_max_threshold;
+    return ESP_OK;
+}
+
+esp_err_t max330100_read_temperature(max30100_config_t* this, float* temperature) {
     uint8_t current_mode_reg;
     //Tratar erros
     esp_err_t ret = max30100_read_register( this,
@@ -541,10 +595,9 @@ float max30100_mean_diff( max30100_config_t* this, float M )
                             this->mean_diff_ir.values[this->mean_diff_ir.index];
 
     this->mean_diff_ir.index++;
-    this->mean_diff_ir.index = this->mean_diff_ir.index %
-                               MAX30100_MEAN_FILTER_SIZE;
+    this->mean_diff_ir.index = this->mean_diff_ir.index % this->mean_filter_size;
 
-    if(this->mean_diff_ir.count < MAX30100_MEAN_FILTER_SIZE)
+    if(this->mean_diff_ir.count < this->mean_filter_size)
         this->mean_diff_ir.count++;
 
     avg = this->mean_diff_ir.sum / this->mean_diff_ir.count;
