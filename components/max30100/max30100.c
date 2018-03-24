@@ -1,41 +1,21 @@
-/*
-MIT License
-
-Copyright (c) 2017 Raivis Strogonovs (https://morf.lv)
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
-*/
-
-/*
-Translation to C and ESP32 version
-
-Author: Angelo Elias Dalzotto (150633@upf.br)
-GEPID - Grupo de Pesquisa em Cultura Digital (http://gepid.upf.br/)
-Universidade de Passo Fundo (http://www.upf.br/)
+/**
+ * @file max30100.c
+ * 
+ * @author
+ * Angelo Elias Dalzotto (150633@upf.br)
+ * GEPID - Grupo de Pesquisa em Cultura Digital (http://gepid.upf.br/)
+ * Universidade de Passo Fundo (http://www.upf.br/)
+ * 
+ * @copyright
+ * Copyright (c) 2017 Raivis Strogonovs (https://morf.lv)
+ * 
+ * @brief This is the source code for all the functions included in the
+ * MAX30100 ESP32 Library.
 */
 
 #include <stdio.h>
 #include "max30100/max30100.h"
 #include "max30100/registers.h"
-
-/* Definitions */
 
 esp_err_t max30100_init( max30100_config_t* this,
                          i2c_port_t i2c_num,
@@ -468,8 +448,8 @@ esp_err_t max30100_set_pulse_width( max30100_config_t* this,
 }
 
 esp_err_t max30100_set_led_current( max30100_config_t* this,
-                                    uint8_t red_current,
-                                    uint8_t ir_current )
+                                    max30100_current_t red_current,
+                                    max30100_current_t ir_current )
 {
     //Tratar erros
     return max30100_write_register( this,
@@ -656,3 +636,25 @@ esp_err_t max30100_print_registers(max30100_config_t* this)
 
     return ESP_OK;
 }
+
+/**
+ * MIT License
+ * 
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+*/
