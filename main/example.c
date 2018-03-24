@@ -1,14 +1,25 @@
-/*
-Author: Angelo Elias Dalzotto (150633@upf.br)
-GEPID - Grupo de Pesquisa em Cultura Digital (http://gepid.upf.br/)
-Universidade de Passo Fundo (http://www.upf.br/)
+/**
+ * @file example.c
+ * 
+ * @author
+ * Angelo Elias Dalzotto (150633@upf.br)
+ * GEPID - Grupo de Pesquisa em Cultura Digital (http://gepid.upf.br/)
+ * Universidade de Passo Fundo (http://www.upf.br/)
+ * 
+ * @copyright
+ * Copyright (c) 2017 Raivis Strogonovs (https://morf.lv)
+ * 
+ * @brief This is an example file to the MAX30100 library for the ESP32.
+ * It initializes the IDF-SDK I2C driver and then initializes the sensor.
+ * It crates a task to update the readings at a rate of 100Hz and prints
+ * the bpm and oxigen saturation results.
 */
 /**
  * Pin assignment:
  * - i2c:
  *    GPIO18: SDA
  *    GPIO19: SDL
- * - no need to add external pull-up resistors, driver will enable internal pull-up resistors.
+ * - no need to add external pull-up resistors.
  */
 
 #include <stdio.h>
