@@ -17,19 +17,20 @@
 /**
  * Pin assignment:
  * - i2c:
- *    GPIO18: SDA
- *    GPIO19: SDL
+ *    GPIO12: SDA
+ *    GPIO14: SDL
  * - no need to add external pull-up resistors.
  */
 
 #include <stdio.h>
 #include "driver/i2c.h"
 #include "freertos/task.h"
+#include "driver/gpio.h"
 
 #include "max30100/max30100.h"
 
-#define I2C_SDA 18
-#define I2C_SCL 19
+#define I2C_SDA 12
+#define I2C_SCL 14
 #define I2C_FRQ 100000
 #define I2C_PORT I2C_NUM_0
 
@@ -74,7 +75,7 @@ void app_main()
                    MAX30100_DEFAULT_IR_LED_CURRENT,
                    MAX30100_DEFAULT_START_RED_LED_CURRENT,
                    MAX30100_DEFAULT_MEAN_FILTER_SIZE,
-                   MAX30100_DEFAULT_PULSE_BPM_SAMPLE_SIZE,
+                   5,
                    true, false ));
 
     //Start test task
