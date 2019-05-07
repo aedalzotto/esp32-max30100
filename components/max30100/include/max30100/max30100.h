@@ -170,7 +170,7 @@ typedef struct _max30100_config_t {
     bool debug;
 
     uint8_t red_current;
-    float last_red_current_check;
+    uint32_t last_red_current_check;
 
     uint8_t current_pulse_detector_state;
     float current_bpm;

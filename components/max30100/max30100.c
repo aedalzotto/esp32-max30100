@@ -16,6 +16,7 @@
 #include <stdio.h>
 #include "max30100/max30100.h"
 #include "max30100/registers.h"
+#include <string.h>
 
 esp_err_t max30100_init( max30100_config_t* this,
                          i2c_port_t i2c_num,
@@ -47,7 +48,7 @@ esp_err_t max30100_init( max30100_config_t* this,
     this->mean_diff_ir.values = NULL;
     this->values_bpm = NULL;
     this->mean_diff_ir.values = malloc(sizeof(float)*mean_filter_size);
-    this->values_bpm = malloc(sizeof(float)*mean_filter_size);
+    this->values_bpm = malloc(sizeof(float)*pulse_bpm_sample_size);
 
     if(!(this->values_bpm) || !(this->mean_diff_ir.values)) return ESP_ERR_INVALID_RESPONSE;
 
@@ -80,17 +81,16 @@ esp_err_t max30100_init( max30100_config_t* this,
     this->lpb_filter_ir.v[1] = 0;
     this->lpb_filter_ir.result = 0;
 
+    memset(this->mean_diff_ir.values, 0, sizeof(float)*mean_filter_size);
     this->mean_diff_ir.index = 0;
     this->mean_diff_ir.sum = 0;
     this->mean_diff_ir.count = 0;
-
 
 
     this->values_bpm[0] = 0;
     this->values_bpm_sum = 0;
     this->values_bpm_count = 0;
     this->bpm_index = 0;
-
 
 
     this->ir_ac_sq_sum = 0;
@@ -134,8 +134,7 @@ esp_err_t max30100_update(max30100_config_t* this, max30100_data_t* data) {
     this->red_ac_sq_sum+= this->dc_filter_red.result*this->dc_filter_red.result;
     this->samples_recorded++;
 
-    if( max30100_detect_pulse(this, this->lpb_filter_ir.result) &&
-        this->samples_recorded > 0 )
+    if(max30100_detect_pulse(this, this->lpb_filter_ir.result) && this->samples_recorded)
     {
         data->pulse_detected=true;
         this->pulses_detected++;
@@ -215,24 +214,49 @@ bool max30100_detect_pulse(max30100_config_t* this, float sensor_value) {
             last_beat = current_beat;
 
             float raw_bpm = 0;
-            if(beat_duration > 0)
+            if(beat_duration)
                 raw_bpm = 60000.0 / (float)beat_duration;
 
-            if(this->debug)
-                printf("%f\n", raw_bpm);
+            if(this->debug){
+                printf("Beat duration: %u\n", beat_duration);
+                printf("Raw BPM: %f\n", raw_bpm);
+            }
+
+
+            // ToDo: Reset filter after a while without pulses
+            if(beat_duration > 2500){ // 2.5 seconds
+                this->values_bpm_count = 0;
+                this->values_bpm_sum = 0;
+                this->bpm_index = 0;
+                this->values_bpm[this->bpm_index] = 0;
+            }
+            
 
             //This method sometimes glitches,
             //it's better to go through whole moving average everytime.
             //IT's a neat idea to optimize the amount of work for moving avg,
             //but while placing, removing finger it can screw up
-            //this->values_bpmSum -= this->values_bpm[bpmIndex];
-            //this->values_bpm[bpmIndex] = rawBPM;
-            //this->values_bpmSum += this->values_bpm[bpmIndex];
+
+            // ToDo: RING filter. This is not correct.
+            /*
+            if(this->values_bpm_count == this->pulse_bpm_sample_size)
+                this->values_bpm_sum -= this->values_bpm[this->bpm_index];
 
             this->values_bpm[this->bpm_index] = raw_bpm;
+            this->values_bpm_sum += this->values_bpm[this->bpm_index++];
+            */
+        
+            this->values_bpm[this->bpm_index++] = raw_bpm;
+            this->bpm_index %= this->pulse_bpm_sample_size;
+
+            if(this->values_bpm_count < this->pulse_bpm_sample_size)
+                this->values_bpm_count++;
+
             this->values_bpm_sum = 0;
-            for(int i = 0; i < this->pulse_bpm_sample_size; i++)
+            for(int i = 0; i < this->values_bpm_count; i++)
                 this->values_bpm_sum += this->values_bpm[i];
+
+            this->current_bpm = this->values_bpm_sum / this->values_bpm_count;
 
             if(this->debug) {
                 printf("CurrentMoving Avg: ");
@@ -241,18 +265,8 @@ bool max30100_detect_pulse(max30100_config_t* this, float sensor_value) {
                     printf("%f ", this->values_bpm[i]);
 
                 printf(" \n");
-            }
-
-            this->bpm_index++;
-            this->bpm_index = this->bpm_index % this->pulse_bpm_sample_size;
-
-            if(this->values_bpm_count < this->pulse_bpm_sample_size)
-                this->values_bpm_count++;
-
-            this->current_bpm = this->values_bpm_sum / this->values_bpm_count;
-
-            if(this->debug)
                 printf("AVg. BPM: %f\n", this->current_bpm);
+            }                
 
             this->current_pulse_detector_state = MAX30100_PULSE_TRACE_DOWN;
 
@@ -529,8 +543,8 @@ esp_err_t max30100_read_fifo(max30100_config_t* this, max30100_fifo_t* fifo) {
     //Testar erros
     esp_err_t ret = max30100_read_from(this, MAX30100_FIFO_DATA, buffer, 4);
     if(ret != ESP_OK) return ret;
-    fifo->raw_ir = (uint16_t)(buffer[0] << 8) | buffer[1];
-    fifo->raw_red = (uint16_t)(buffer[2] << 8) | buffer[3];
+    fifo->raw_ir = ((uint16_t)buffer[0] << 8) | buffer[1];
+    fifo->raw_red = ((uint16_t)buffer[2] << 8) | buffer[3];
 
     return ESP_OK;
 }
@@ -539,7 +553,7 @@ max30100_dc_filter_t max30100_dc_removal( float x,
                                           float prev_w,
                                           float alpha )
 {
-    max30100_dc_filter_t filtered;
+    max30100_dc_filter_t filtered = {};
     filtered.w = x + alpha * prev_w;
     filtered.result = filtered.w - prev_w;
 
@@ -552,12 +566,11 @@ void max30100_lpb_filter( max30100_config_t* this, float x )
 
     //Fs = 100Hz and Fc = 10Hz
     this->lpb_filter_ir.v[1] = (2.452372752527856026e-1 * x) +
-                               ( 0.50952544949442879485 *
-                                 this->lpb_filter_ir.v[0] );
+                               ( 0.50952544949442879485 * this->lpb_filter_ir.v[0] );
 
     //Fs = 100Hz and Fc = 4Hz
-    //filterResult->v[1] = (1.367287359973195227e-1 * x)
-    //                   + (0.72654252800536101020 * filterResult->v[0]);
+    //this->lpb_filter_ir.v[1] = (1.367287359973195227e-1 * x)
+    //                   + (0.72654252800536101020 * this->lpb_filter_ir.v[0]);
     //Very precise butterworth filter
 
     this->lpb_filter_ir.result = this->lpb_filter_ir.v[0] +
@@ -568,13 +581,10 @@ float max30100_mean_diff( max30100_config_t* this, float M )
 {
     float avg = 0;
 
-    this->mean_diff_ir.sum -=
-                            this->mean_diff_ir.values[this->mean_diff_ir.index];
+    this->mean_diff_ir.sum -= this->mean_diff_ir.values[this->mean_diff_ir.index];
     this->mean_diff_ir.values[this->mean_diff_ir.index] = M;
-    this->mean_diff_ir.sum +=
-                            this->mean_diff_ir.values[this->mean_diff_ir.index];
+    this->mean_diff_ir.sum += this->mean_diff_ir.values[this->mean_diff_ir.index++];
 
-    this->mean_diff_ir.index++;
     this->mean_diff_ir.index = this->mean_diff_ir.index % this->mean_filter_size;
 
     if(this->mean_diff_ir.count < this->mean_filter_size)

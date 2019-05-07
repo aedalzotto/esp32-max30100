@@ -29,16 +29,15 @@
 
 #include "max30100/max30100.h"
 
-#define I2C_SDA 12
-#define I2C_SCL 14
+#define I2C_SDA 26
+#define I2C_SCL 25
 #define I2C_FRQ 100000
 #define I2C_PORT I2C_NUM_0
 
-max30100_config_t max30100;
-max30100_data_t result;
+max30100_config_t max30100 = {};
 
 esp_err_t i2c_master_init(i2c_port_t i2c_port){
-    i2c_config_t conf;
+    i2c_config_t conf = {};
     conf.mode = I2C_MODE_MASTER;
     conf.sda_io_num = I2C_SDA;
     conf.scl_io_num = I2C_SCL;
@@ -50,7 +49,8 @@ esp_err_t i2c_master_init(i2c_port_t i2c_port){
 }
 
 void get_bpm(void* param) {
-    max30100_data_t result;
+    printf("MAX30100 Test\n");
+    max30100_data_t result = {};
     while(true) {
         //Update sensor, saving to "result"
         ESP_ERROR_CHECK(max30100_update(&max30100, &result));
@@ -75,11 +75,11 @@ void app_main()
                    MAX30100_DEFAULT_IR_LED_CURRENT,
                    MAX30100_DEFAULT_START_RED_LED_CURRENT,
                    MAX30100_DEFAULT_MEAN_FILTER_SIZE,
-                   5,
-                   true, false ));
+                   MAX30100_DEFAULT_PULSE_BPM_SAMPLE_SIZE,
+                   true, true ));
 
     //Start test task
-    xTaskCreate(get_bpm, "Get BPM", 10000, NULL, 1, NULL);
+    xTaskCreate(get_bpm, "Get BPM", 8192, NULL, 1, NULL);
 }
 
 /**
