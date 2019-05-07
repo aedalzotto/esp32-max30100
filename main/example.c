@@ -76,7 +76,7 @@ void app_main()
                    MAX30100_DEFAULT_START_RED_LED_CURRENT,
                    MAX30100_DEFAULT_MEAN_FILTER_SIZE,
                    MAX30100_DEFAULT_PULSE_BPM_SAMPLE_SIZE,
-                   true, true ));
+                   true, false ));
 
     //Start test task
     xTaskCreate(get_bpm, "Get BPM", 8192, NULL, 1, NULL);

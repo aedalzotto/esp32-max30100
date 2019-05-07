@@ -87,7 +87,7 @@ esp_err_t max30100_init( max30100_config_t* this,
     this->mean_diff_ir.count = 0;
 
 
-    this->values_bpm[0] = 0;
+    memset(this->values_bpm, 0, sizeof(float)*pulse_bpm_sample_size);
     this->values_bpm_sum = 0;
     this->values_bpm_count = 0;
     this->bpm_index = 0;
@@ -222,53 +222,48 @@ bool max30100_detect_pulse(max30100_config_t* this, float sensor_value) {
                 printf("Raw BPM: %f\n", raw_bpm);
             }
 
+            this->current_pulse_detector_state = MAX30100_PULSE_TRACE_DOWN;
 
-            // ToDo: Reset filter after a while without pulses
+            // Reset filter after a while without pulses
             if(beat_duration > 2500){ // 2.5 seconds
-                this->values_bpm_count = 0;
+                memset(this->values_bpm, 0, sizeof(float)*this->pulse_bpm_sample_size);
                 this->values_bpm_sum = 0;
+                this->values_bpm_count = 0;
                 this->bpm_index = 0;
-                this->values_bpm[this->bpm_index] = 0;
+
+                if(this->debug)
+                    printf("Moving avg. reseted\n");
             }
-            
 
-            //This method sometimes glitches,
-            //it's better to go through whole moving average everytime.
-            //IT's a neat idea to optimize the amount of work for moving avg,
-            //but while placing, removing finger it can screw up
+            // Test if out of bounds
+            if(raw_bpm < 50 || raw_bpm > 220){
+                if(this->debug)
+                    printf("BPM out of bounds. Not adding to Moving Avg.\n");
 
-            // ToDo: RING filter. This is not correct.
-            /*
-            if(this->values_bpm_count == this->pulse_bpm_sample_size)
-                this->values_bpm_sum -= this->values_bpm[this->bpm_index];
+                return false;
+            }
 
+            // Optimized filter
+            this->values_bpm_sum -= this->values_bpm[this->bpm_index];
             this->values_bpm[this->bpm_index] = raw_bpm;
             this->values_bpm_sum += this->values_bpm[this->bpm_index++];
-            */
-        
-            this->values_bpm[this->bpm_index++] = raw_bpm;
+
             this->bpm_index %= this->pulse_bpm_sample_size;
 
             if(this->values_bpm_count < this->pulse_bpm_sample_size)
                 this->values_bpm_count++;
-
-            this->values_bpm_sum = 0;
-            for(int i = 0; i < this->values_bpm_count; i++)
-                this->values_bpm_sum += this->values_bpm[i];
 
             this->current_bpm = this->values_bpm_sum / this->values_bpm_count;
 
             if(this->debug) {
                 printf("CurrentMoving Avg: ");
 
-                for(int i = 0; i < this->pulse_bpm_sample_size; i++)
+                for(int i = 0; i < this->values_bpm_count; i++)
                     printf("%f ", this->values_bpm[i]);
 
                 printf(" \n");
                 printf("AVg. BPM: %f\n", this->current_bpm);
-            }                
-
-            this->current_pulse_detector_state = MAX30100_PULSE_TRACE_DOWN;
+            }
 
             return true;
         }
